@@ -1,3 +1,4 @@
+---
 name: memos-skill
 description: >-
   通过本地 MemOS API（agent-memory-v3）读写 agent 长期记忆：按视图检索
@@ -7,6 +8,7 @@ description: >-
   （四容器栈），是 agent-memory-skill（v1，SQLite）迁移后的新记忆系统。
 metadata:
   short-description: "MemOS 长期记忆读写（v2），视图检索 + 踩坑召回 + 记忆写入"
+---
 
 # MemOS Memory Skill
 
