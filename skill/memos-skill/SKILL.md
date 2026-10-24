@@ -46,6 +46,10 @@ python3 $S add "用户决定 v2 的 MCP 接入一律走 api-mcp-bridge，不用�
 # 原文直存（不抽取，用于已结构化的记录）
 python3 $S add "[v1-tool #20] browser-harness 部署记录…" --fast
 
+# 软删除与恢复（按记录精确删除；record_id 取 search 结果里的 id，删除时也会回显）
+python3 $S delete <record_id>
+python3 $S recover <record_id>
+
 # 统计与健康
 python3 $S stats
 python3 $S health
@@ -59,6 +63,10 @@ python3 $S health
   已结构化的记录（带 [v1-*] 标记的原文等）用 `add --fast` 原文直存。
 - **检索语义**：v2 是语义+全文混合召回，不依赖标签精确匹配；历史踩坑的
   event/device 标签已编入正文文本，按语义描述即可召回。
+- **删除语义**：`delete <record_id>` 为按记录软删除，结果可 `recover`（按删除返回的
+  `record_id` 批次恢复，此时该 id 即被删记录的 id）；硬删（`hard_delete`）不进 CLI，
+  只留在 API 层。**已知限制**：search 召回路径暂不过滤已软删记忆，删除后仍可能
+  搜到；验证删除以 `stats` / `get_memory` 为准。
 - **与 MCP 的关系**：Codex 已配置 `[mcp_servers.memos]`（stdio 桥接，工具
   remember/recall）；本 skill 提供同一后端的 CLI 访问与更细的视图控制，
   两者读写同一记忆库，可并存。

@@ -479,11 +479,18 @@ def chat_stream_business_user(chat_req: ChatBusinessRequest):
     response_model=DeleteMemoryByRecordIdResponse,
 )
 def delete_memory_by_record_id(memory_req: DeleteMemoryByRecordIdRequest):
-    """(inner) Delete memory nodes by mem_cube_id (user_name) and delete_record_id. Record id is inner field, just for delete and recover memory, not for user to set."""
+    """(inner) Delete memory nodes by mem_cube_id (user_name) and record_id.
+
+    When record_id is provided, only the node it identifies is deleted (precise
+    single-record delete); when it is absent the whole mem_cube is deleted in
+    batch (legacy behaviour). The record id is also used as the delete_record_id
+    batch token on the nodes, so recover_memory_by_record_id can find them again.
+    """
     graph_db.delete_node_by_mem_cube_id(
         mem_cube_id=memory_req.mem_cube_id,
         delete_record_id=memory_req.record_id,
         hard_delete=memory_req.hard_delete,
+        record_id=memory_req.record_id,
     )
 
     return DeleteMemoryByRecordIdResponse(

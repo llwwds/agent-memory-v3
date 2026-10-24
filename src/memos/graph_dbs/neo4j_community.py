@@ -1288,10 +1288,18 @@ class Neo4jCommunityGraphDB(Neo4jGraphDB):
         mem_cube_id: str | None = None,
         delete_record_id: str | None = None,
         hard_delete: bool = False,
+        record_id: str | None = None,
     ) -> int:
+        """Delete memory nodes for a mem_cube.
+
+        When record_id is given, only the node whose ``id`` matches is affected
+        (precise single-record delete); when it is None the whole mem_cube is
+        deleted in batch (legacy behaviour). delete_record_id is the batch token
+        written onto the nodes so recover can find them again.
+        """
         logger.info(
             f"delete_node_by_mem_cube_id mem_cube_id:{mem_cube_id}, "
-            f"delete_record_id:{delete_record_id}, hard_delete:{hard_delete}"
+            f"delete_record_id:{delete_record_id}, hard_delete:{hard_delete}, record_id:{record_id}"
         )
 
         if not mem_cube_id:
@@ -1304,29 +1312,40 @@ class Neo4jCommunityGraphDB(Neo4jGraphDB):
             )
             return 0
 
+        # record_id given: narrow the match to one node; otherwise keep batch semantics
+        # (is not None so an explicit "" matches nothing instead of wiping the whole cube)
+        id_condition = " AND n.id = $record_id" if record_id is not None else ""
+        id_params = {"record_id": record_id} if record_id is not None else {}
+
         try:
             with self.driver.session(database=self.db_name) as session:
                 if hard_delete:
-                    query_get_ids = """
+                    query_get_ids = f"""
                         MATCH (n:Memory)
-                        WHERE n.user_name = $mem_cube_id AND n.delete_record_id = $delete_record_id
+                        WHERE n.user_name = $mem_cube_id AND n.delete_record_id = $delete_record_id{id_condition}
                         RETURN n.id AS id
                     """
                     result = session.run(
-                        query_get_ids, mem_cube_id=mem_cube_id, delete_record_id=delete_record_id
+                        query_get_ids,
+                        mem_cube_id=mem_cube_id,
+                        delete_record_id=delete_record_id,
+                        **id_params,
                     )
                     node_ids = [record["id"] for record in result]
 
                     # Delete from Neo4j
-                    query = """
+                    query = f"""
                         MATCH (n:Memory)
-                        WHERE n.user_name = $mem_cube_id AND n.delete_record_id = $delete_record_id
+                        WHERE n.user_name = $mem_cube_id AND n.delete_record_id = $delete_record_id{id_condition}
                         DETACH DELETE n
                     """
                     logger.info(f"[delete_node_by_mem_cube_id] Hard delete query: {query}")
 
                     result = session.run(
-                        query, mem_cube_id=mem_cube_id, delete_record_id=delete_record_id
+                        query,
+                        mem_cube_id=mem_cube_id,
+                        delete_record_id=delete_record_id,
+                        **id_params,
                     )
                     summary = result.consume()
                     deleted_count = summary.counters.nodes_deleted if summary.counters else 0
@@ -1348,11 +1367,11 @@ class Neo4jCommunityGraphDB(Neo4jGraphDB):
                 else:
                     current_time = datetime.utcnow().isoformat()
 
-                    query = """
+                    query = f"""
                         MATCH (n:Memory)
                         WHERE n.user_name = $mem_cube_id
                             AND (n.delete_time IS NULL OR n.delete_time = "")
-                            AND (n.delete_record_id IS NULL OR n.delete_record_id = "")
+                            AND (n.delete_record_id IS NULL OR n.delete_record_id = ""){id_condition}
                         SET n.status = $status,
                             n.delete_record_id = $delete_record_id,
                             n.delete_time = $delete_time
@@ -1366,6 +1385,7 @@ class Neo4jCommunityGraphDB(Neo4jGraphDB):
                         status="deleted",
                         delete_record_id=delete_record_id,
                         delete_time=current_time,
+                        **id_params,
                     )
                     record = result.single()
                     updated_count = record["updated_count"] if record else 0

@@ -5112,10 +5112,18 @@ class PolarDBGraphDB(BaseGraphDB):
         mem_cube_id: str | None = None,
         delete_record_id: str | None = None,
         hard_delete: bool = False,
+        record_id: str | None = None,
     ) -> int:
+        """Delete memory nodes for a mem_cube.
+
+        When record_id is given, only the node whose ``id`` matches is affected
+        (precise single-record delete); when it is None the whole mem_cube is
+        deleted in batch (legacy behaviour). delete_record_id is the batch token
+        written onto the nodes so recover can find them again.
+        """
         logger.info(
             f"delete_node_by_mem_cube_id mem_cube_id:{mem_cube_id}, "
-            f"delete_record_id:{delete_record_id}, hard_delete:{hard_delete}"
+            f"delete_record_id:{delete_record_id}, hard_delete:{hard_delete}, record_id:{record_id}"
         )
 
         if not mem_cube_id:
@@ -5128,6 +5136,14 @@ class PolarDBGraphDB(BaseGraphDB):
             )
             return 0
 
+        # record_id given: narrow the match to one node; otherwise keep batch semantics
+        # (is not None so an explicit "" matches nothing instead of wiping the whole cube)
+        id_condition = ""
+        id_params: list = []
+        if record_id is not None:
+            id_condition = " AND ag_catalog.agtype_access_operator(properties, '\"id\"'::agtype) = %s::agtype"
+            id_params = [self.format_param_value(record_id)]
+
         try:
             with self._get_connection() as conn, conn.cursor() as cursor:
                 user_name_condition = "ag_catalog.agtype_access_operator(properties, '\"user_name\"'::agtype) = %s::agtype"
@@ -5136,9 +5152,13 @@ class PolarDBGraphDB(BaseGraphDB):
 
                 if hard_delete:
                     delete_record_id_condition = "ag_catalog.agtype_access_operator(properties, '\"delete_record_id\"'::agtype) = %s::agtype"
-                    where_clause = f"{user_name_condition} AND {delete_record_id_condition}"
+                    where_clause = f"{user_name_condition} AND {delete_record_id_condition}{id_condition}"
 
-                    where_params = [user_name_param, self.format_param_value(delete_record_id)]
+                    where_params = [
+                        user_name_param,
+                        self.format_param_value(delete_record_id),
+                        *id_params,
+                    ]
 
                     delete_query = f"""
                         DELETE FROM "{self.db_name}_graph"."Memory"
@@ -5160,7 +5180,7 @@ class PolarDBGraphDB(BaseGraphDB):
                         "(ag_catalog.agtype_access_operator(properties, '\"delete_record_id\"'::agtype) IS NULL "
                         "OR ag_catalog.agtype_access_operator(properties, '\"delete_record_id\"'::agtype) = '\"\"'::agtype)"
                     )
-                    where_clause = f"{user_name_condition} AND {delete_time_empty_condition} AND {delete_record_id_empty_condition}"
+                    where_clause = f"{user_name_condition} AND {delete_time_empty_condition} AND {delete_record_id_empty_condition}{id_condition}"
 
                     current_time = datetime.utcnow().isoformat()
                     update_query = f"""
@@ -5183,6 +5203,7 @@ class PolarDBGraphDB(BaseGraphDB):
                         json.dumps(update_properties),
                         current_time,
                         user_name_param,
+                        *id_params,
                     ]
                     cursor.execute(update_query, update_params)
                     updated_count = cursor.rowcount

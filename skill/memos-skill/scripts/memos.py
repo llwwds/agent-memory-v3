@@ -1,8 +1,8 @@
 """MemOS memory skill CLI (agent-memory-v3 companion skill).
 
 Zero-dependency (urllib only) command line access to the local MemOS /product
-API for agents: view-routed search, memory writing, pitfall recall, stats and
-health. Configuration (in priority order):
+API for agents: view-routed search, memory writing, soft delete/recover,
+pitfall recall, stats and health. Configuration (in priority order):
 
 1. environment: MEMOS_API_BASE, MEMOS_API_KEY
 2. config file: ~/.memos-skill.env (KEY=VALUE lines, chmod 600)
@@ -145,6 +145,44 @@ def cmd_add(args: argparse.Namespace) -> int:
     return 0 if result.get("code") == 200 else 1
 
 
+def cmd_delete(args: argparse.Namespace) -> int:
+    """软删除指定记录（按记录精确删）。hard_delete 恒为 false：硬删只保留在 API 层，不进 CLI。"""
+    base, key = load_config()
+    result = post(base, key, "/product/delete_memory_by_record_id", {
+        "mem_cube_id": args.user_id,
+        "record_id": args.record_id,
+        "hard_delete": False,
+    })
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result.get("code") == 200 else 1
+    print(f"delete: code={result.get('code')} message={result.get('message')}")
+    for k, v in (result.get("data") or {}).items():
+        print(f"- {k}: {v}")
+    # 回显输入 id，作为后续 recover 的句柄
+    print(f"- record_id: {args.record_id}")
+    print(f"  recover with: recover {args.record_id}")
+    print("  note: search 召回链路暂未过滤已软删记忆，验证删除以 stats/get_memory 为准")
+    return 0 if result.get("code") == 200 else 1
+
+
+def cmd_recover(args: argparse.Namespace) -> int:
+    """恢复软删除的记忆（按删除时记录的 id）。"""
+    base, key = load_config()
+    result = post(base, key, "/product/recover_memory_by_record_id", {
+        "mem_cube_id": args.user_id,
+        "delete_record_id": args.delete_record_id,
+    })
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result.get("code") == 200 else 1
+    print(f"recover: code={result.get('code')} message={result.get('message')}")
+    for k, v in (result.get("data") or {}).items():
+        print(f"- {k}: {v}")
+    print(f"- delete_record_id: {args.delete_record_id}")
+    return 0 if result.get("code") == 200 else 1
+
+
 def cmd_stats(args: argparse.Namespace) -> int:
     base, key = load_config()
     result = post(base, key, "/product/get_memory", {
@@ -209,6 +247,16 @@ def main() -> int:
     p.add_argument("--fast", action="store_true", help="verbatim storage without LLM extraction (sync fast mode)")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_add)
+
+    p = sub.add_parser("delete", help="soft-delete a memory by record id (recoverable)")
+    p.add_argument("record_id", help="memory id from search results")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_delete)
+
+    p = sub.add_parser("recover", help="recover a soft-deleted memory")
+    p.add_argument("delete_record_id", help="record id returned by/when deleting")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_recover)
 
     p = sub.add_parser("stats", help="memory counts per view")
     p.add_argument("--json", action="store_true")
