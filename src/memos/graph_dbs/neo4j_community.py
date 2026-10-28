@@ -334,23 +334,40 @@ class Neo4jCommunityGraphDB(Neo4jGraphDB):
             - If 'search_filter' is provided, it applies additional metadata-based filtering.
             - If 'filter' is provided, it applies complex filter conditions with AND/OR logic.
             - The returned IDs can be used to fetch full node data from Neo4j if needed.
+
+        The delete lifecycle is authoritative in Neo4j, not in the vector store. Every
+        non-empty candidate set is verified against Neo4j, so deleted memories are never
+        returned (whatever the vector payload says), and a memory restored to
+        'activated' is visible again even if its vector payload still says 'deleted'.
+        Because deleted candidates are dropped rather than replaced, fewer than top_k
+        results may be returned.
         """
         user_name = user_name if user_name else self.config.user_name
 
-        # First, perform vector search in external vector DB
+        # First, perform vector search in external vector DB.
+        # `status` is intentionally not pushed down: the vector payload may be stale
+        # (soft delete/recovery do not rewrite it), so lifecycle filtering happens in
+        # the authoritative Neo4j check below.
         vec_filter = {}
         if scope:
             vec_filter["memory_type"] = scope
-        if status:
-            vec_filter["status"] = status
         vec_filter["vector_sync"] = "success"
-        if kwargs.get("cube_name"):
-            vec_filter["user_name"] = kwargs["cube_name"]
-        else:
-            vec_filter["user_name"] = user_name
+        # cube_name takes precedence over user_name, matching the authoritative filter.
+        effective_user_name = kwargs.get("cube_name") or user_name
+        vec_filter["user_name"] = effective_user_name
 
-        # Add search_filter conditions
+        # Add search_filter conditions. Its top-level `status` is a lifecycle
+        # condition and must be enforced by Neo4j, not by the vector store; copy the
+        # dict so the caller's dict is never mutated.
+        search_status = None
         if search_filter:
+            search_filter = dict(search_filter)
+            search_status = search_filter.pop("status", None)
+            if search_status is not None and not isinstance(search_status, str):
+                raise ValueError(
+                    "search_filter['status'] must be a string when provided, "
+                    f"got {type(search_status).__name__}"
+                )
             vec_filter.update(search_filter)
 
         # Perform vector search
@@ -367,29 +384,32 @@ class Neo4jCommunityGraphDB(Neo4jGraphDB):
         if threshold is not None:
             vec_results = [r for r in vec_results if r.score is None or r.score >= threshold]
 
-        # If no filter or knowledgebase_ids provided, return vector search results directly
-        if not filter and not knowledgebase_ids:
-            if not return_fields:
-                return [{"id": r.id, "score": r.score} for r in vec_results]
-            # Need to fetch additional fields from Neo4j
-            vec_ids = [r.id for r in vec_results]
-            if not vec_ids:
-                return []
-            score_map = {r.id: r.score for r in vec_results}
-            return self._fetch_return_fields(vec_ids, score_map, return_fields)
-
         # Extract IDs from vector search results
         vec_ids = [r.id for r in vec_results]
         if not vec_ids:
             return []
 
-        # Build WHERE clause for Neo4j filtering
-        where_clauses = ["n.id IN $vec_ids"]
+        # Build WHERE clause for Neo4j filtering. Every path (with or without
+        # filter/knowledgebase_ids/return_fields) goes through this authoritative
+        # state check, so deleted nodes can never reach the caller.
+        where_clauses = [
+            "n.id IN $vec_ids",
+            "coalesce(n.status, 'activated') <> 'deleted'",
+        ]
         params = {"vec_ids": vec_ids}
+
+        # The explicit `status` argument and a `search_filter` level status are
+        # independent AND conditions; conflicting values simply match nothing.
+        if status:
+            where_clauses.append("n.status = $status")
+            params["status"] = status
+        if search_status:
+            where_clauses.append("n.status = $search_status")
+            params["search_status"] = search_status
 
         # Build user_name filter with knowledgebase_ids support (OR relationship) using common method
         user_name_conditions, user_name_params = self._build_user_name_and_kb_ids_conditions_cypher(
-            user_name=user_name,
+            user_name=effective_user_name,
             knowledgebase_ids=knowledgebase_ids,
             default_user_name=self.config.user_name,
             node_alias="n",
@@ -653,6 +673,7 @@ class Neo4jCommunityGraphDB(Neo4jGraphDB):
         scope: str,
         filter: dict | None = None,
         knowledgebase_ids: list[str] | None = None,
+        status: str | None = None,
         **kwargs,
     ) -> list[dict]:
         """
@@ -663,6 +684,9 @@ class Neo4jCommunityGraphDB(Neo4jGraphDB):
             filter (dict, optional): Filter conditions with 'and' or 'or' logic for search results.
                 Example: {"and": [{"id": "xxx"}, {"A": "yyy"}]} or {"or": [{"id": "xxx"}, {"A": "yyy"}]}
             knowledgebase_ids (list[str], optional): List of knowledgebase IDs to filter by.
+            status (str, optional): Filter by status (e.g., 'activated'). If None, no status
+                filter is applied, which keeps the raw enumeration semantics used by
+                admin/history callers.
 
         Returns:
             list[dict]: Full list of memory items under this scope.
@@ -680,6 +704,11 @@ class Neo4jCommunityGraphDB(Neo4jGraphDB):
 
         where_clauses = ["n.memory_type = $scope"]
         params = {"scope": scope}
+
+        # Optional lifecycle gate. Default None keeps the previous raw enumeration.
+        if status:
+            where_clauses.append("n.status = $status")
+            params["status"] = status
 
         # Build user_name filter with knowledgebase_ids support (OR relationship) using common method
         user_name_conditions, user_name_params = self._build_user_name_and_kb_ids_conditions_cypher(

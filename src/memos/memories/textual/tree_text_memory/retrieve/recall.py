@@ -279,7 +279,9 @@ class GraphMemoryRetriever:
                     {"field": "key", "op": "in", "value": parsed_goal.keys},
                     {"field": "memory_type", "op": "=", "value": memory_scope},
                 ]
-                key_ids = self.graph_store.get_by_metadata(key_filters, user_name=user_name)
+                key_ids = self.graph_store.get_by_metadata(
+                    key_filters, user_name=user_name, status="activated"
+                )
                 candidate_ids.update(key_ids)
 
             # 2) tag-based OR branch
@@ -288,7 +290,9 @@ class GraphMemoryRetriever:
                     {"field": "tags", "op": "contains", "value": parsed_goal.tags},
                     {"field": "memory_type", "op": "=", "value": memory_scope},
                 ]
-                tag_ids = self.graph_store.get_by_metadata(tag_filters, user_name=user_name)
+                tag_ids = self.graph_store.get_by_metadata(
+                    tag_filters, user_name=user_name, status="activated"
+                )
                 candidate_ids.update(tag_ids)
 
             # No matches → return empty

@@ -1,0 +1,15 @@
+# Apply the audited fix to the existing local runtime without replacing its
+# unrelated deployment overlays. Verify the base image ID before release.
+ARG BASE_IMAGE=llwwds/memos-local:2.0.34.0
+FROM ${BASE_IMAGE}
+
+ARG LOCAL_VERSION=3.2.1.0
+ARG VCS_REF=unknown
+ARG BASE_IMAGE_ID=unknown
+LABEL org.opencontainers.image.version="${LOCAL_VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.title="agent-memory-v3" \
+      io.llwwds.memos.base-image-id="${BASE_IMAGE_ID}"
+
+COPY src/memos/graph_dbs/neo4j_community.py /app/src/memos/graph_dbs/neo4j_community.py
+COPY src/memos/memories/textual/tree_text_memory/retrieve/recall.py /app/src/memos/memories/textual/tree_text_memory/retrieve/recall.py

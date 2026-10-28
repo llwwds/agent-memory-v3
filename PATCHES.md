@@ -51,3 +51,14 @@
 | --- | --- |
 | B1 | 上游 v2.0.34 已修（见复现结论） |
 | B2 | 上游 v2.0.34 已修召回正确性；孤儿向量残留仅卫生问题，按「不改存储引擎」原则不修 |
+
+
+## 3.2.1.0 — 检索软删除可见性修复（2026-10-28）
+
+| # | 文件 | 修改点 | 理由 | commit |
+| --- | --- | --- | --- | --- |
+| B4-1 | `src/memos/graph_dbs/neo4j_community.py` | 向量召回全部分支回 Neo4j 按权威 status 筛选；显式状态与 priority 状态独立 AND；保留 cube、字段投影和向量排序 | 软删与恢复不更新 Qdrant 状态，旧 payload 不能决定检索可见性；同时覆盖 Context 直接投影分支 | 本版本提交 |
+| B4-2 | `src/memos/graph_dbs/neo4j_community.py` | `get_all_memory_items` 落实可选 status，默认仍保留原始枚举 | WorkingMemory 的 activated 条件此前被 kwargs 吞掉 | 本版本提交 |
+| B4-3 | `src/memos/memories/textual/tree_text_memory/retrieve/recall.py` | 慢速图召回的 key/tag 两路补传 activated | 在重排或模型上下文构造之前排除软删候选 | 本版本提交 |
+
+不新增字段、不迁移数据、不重建 embedding；原始按 ID 读取与恢复协议保持不变。功能验收与本地镜像构建说明见 `docs/releases/3.2.1.0.md`。

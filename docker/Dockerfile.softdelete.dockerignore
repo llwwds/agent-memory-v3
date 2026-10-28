@@ -1,0 +1,13 @@
+**
+!docker/
+!docker/Dockerfile.softdelete
+!docker/Dockerfile.softdelete.dockerignore
+!src/
+!src/memos/
+!src/memos/graph_dbs/
+!src/memos/graph_dbs/neo4j_community.py
+!src/memos/memories/
+!src/memos/memories/textual/
+!src/memos/memories/textual/tree_text_memory/
+!src/memos/memories/textual/tree_text_memory/retrieve/
+!src/memos/memories/textual/tree_text_memory/retrieve/recall.py

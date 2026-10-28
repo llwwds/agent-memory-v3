@@ -8,6 +8,8 @@
 > **修改声明**：本仓库是 MemOS v2.0.34（commit `41bf5c7f`）的修改版，依 Apache-2.0 许可证发布；
 > 上游 LICENSE 原样保留，全部差异登记于 [`PATCHES.md`](./PATCHES.md)，基线信息见 [`UPSTREAM.md`](./UPSTREAM.md)。
 
+本地维护版本：**3.2.1.0**。本次修复软删除后的检索可见性；[发布与镜像说明](docs/releases/3.2.1.0.md)。上游 Python 包版本仍保留 2.0.34。
+
 ## 一期范围：六路记忆管线
 
 写入时按类别 key 并行抽取，读出时按类别视图分发（对齐 MemOS 云版 API 形状）：

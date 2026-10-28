@@ -65,8 +65,8 @@ python3 $S health
   event/device 标签已编入正文文本，按语义描述即可召回。
 - **删除语义**：`delete <record_id>` 为按记录软删除，结果可 `recover`（按删除返回的
   `record_id` 批次恢复，此时该 id 即被删记录的 id）；硬删（`hard_delete`）不进 CLI，
-  只留在 API 层。**已知限制**：search 召回路径暂不过滤已软删记忆，删除后仍可能
-  搜到；验证删除以 `stats` / `get_memory` 为准。
+  只留在 API 层。自本地版本 3.2.1.0 起，删除提交后新发起的搜索按 Neo4j
+  权威状态排除软删记录；支持删除再重写。原始按 ID 读取仍保留管理语义。
 - **与 MCP 的关系**：Codex 已配置 `[mcp_servers.memos]`（stdio 桥接，工具
   remember/recall）；本 skill 提供同一后端的 CLI 访问与更细的视图控制，
   两者读写同一记忆库，可并存。
